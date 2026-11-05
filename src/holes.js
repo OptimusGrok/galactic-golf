@@ -1,6 +1,7 @@
 // Nine themed neon rooms. Static meshes are merged per material to keep draw calls low.
-import { BALL_R } from './physics.js?v=6';
-import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=6';
+import { BALL_R } from './physics.js?v=7';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=7';
+import { STRIKE_ICON_DATAURL } from './strikeArt.js?v=7';
 
 let T = null; // set per buildHole
 const GREEN = 0x0e6a30;
@@ -323,30 +324,217 @@ function flattenStaticGroups(root) {
   }
 }
 
+
+/* ---- Strike shmup art (ported from /workspace/strike/src/gfx.js DRAW + PAL, read-only) ---- */
+const STRIKE_PAL = {
+  mil: { a: '#8c9a6e', b: '#56653f', c: '#e8603a', d: '#2b3424', g: '#ffd65a', e: '#c9d2a0' },
+  steel: { a: '#9aa4b6', b: '#5d677c', c: '#ff8a2a', d: '#2a3042', g: '#7af0ff', e: '#d8deea' },
+  navy: { a: '#6a80c0', b: '#3a4a86', c: '#ff4a86', d: '#1a2046', g: '#8affd8', e: '#b8c8f0' },
+  elite: { a: '#d0404e', b: '#801c2c', c: '#ffd83a', d: '#2a0812', g: '#ffffff', e: '#ffa8a8' },
+};
+function _poly(x, pts, col) {
+  x.fillStyle = col; x.beginPath(); x.moveTo(pts[0], pts[1]);
+  for (let i = 2; i < pts.length; i += 2) x.lineTo(pts[i], pts[i + 1]);
+  x.closePath(); x.fill();
+}
+function _mirPoly(x, w, pts, col) {
+  _poly(x, pts, col);
+  const m = pts.slice();
+  for (let i = 0; i < m.length; i += 2) m[i] = w - m[i];
+  _poly(x, m, col);
+}
+function _rect(x, a, b, ww, hh, col) { x.fillStyle = col; x.fillRect(a, b, ww, hh); }
+function makeStrikeCanvas(kind) {
+  const c = document.createElement('canvas');
+  const p = STRIKE_PAL.mil;
+  if (kind === 'player') {
+    c.width = 60; c.height = 68; const x = c.getContext('2d'); const w = 60;
+    const S = 2; // 2x Strike 30x34
+    const M = (pts, col) => _mirPoly(x, w, pts.map((v, i) => v * S), col);
+    const P = (pts, col) => _poly(x, pts.map((v, i) => v * S), col);
+    const R = (a, b, ww, hh, col) => _rect(x, a * S, b * S, ww * S, hh * S, col);
+    M([15, 1, 17, 6, 18, 14, 18, 28, 15, 31], '#e6edf8');
+    M([17, 12, 28, 21, 29, 25, 18, 24], '#aebcd6');
+    M([18, 16, 26, 21, 26, 22.5, 18, 19.5], '#2f6cff');
+    M([27, 18, 29, 19, 29, 26, 27, 25], '#ff4a4a');
+    M([24, 14, 25, 14, 25, 20, 24, 20], '#6a7a9a');
+    M([18, 23, 23, 28, 23, 32, 18, 29], '#8494b4');
+    M([17, 22, 20, 22, 20, 31, 17, 31], '#39425e');
+    M([17.5, 29, 19.5, 29, 19.5, 32, 17.5, 32], '#ff9040');
+    x.fillStyle = '#1a60d0'; x.beginPath(); x.ellipse(15 * S, 11 * S, 2.4 * S, 4 * S, 0, 0, Math.PI * 2); x.fill();
+    R(14, 8, 1, 4, '#c8f8ff'); R(14, 17, 2, 9, '#2f6cff');
+  } else if (kind === 'fighter') {
+    c.width = 36; c.height = 36; const x = c.getContext('2d'); const w = 36; const S = 2;
+    const M = (pts, col) => _mirPoly(x, w, pts.map(v => v * S), col);
+    M([9, 17, 11, 12, 11, 4, 9, 1], p.a); M([10, 4, 17, 1, 17, 5, 11, 11], p.b);
+    M([16, 1, 17, 1, 17, 6, 16, 6], p.c); _rect(x, 8 * S, 10 * S, 2 * S, 3 * S, p.g);
+  } else if (kind === 'bomber') {
+    c.width = 56; c.height = 48; const x = c.getContext('2d'); const w = 56; const S = 2;
+    const M = (pts, col) => _mirPoly(x, w, pts.map(v => v * S), col);
+    M([14, 23, 17, 18, 17, 2, 14, 0], p.a); M([16, 7, 27, 10, 27, 14, 16, 15], p.b);
+    M([16, 1, 20, 0, 20, 3, 16, 5], p.b);
+    _rect(x, 19 * S, 5 * S, 3 * S, 12 * S, p.d); _rect(x, 25 * S, 10 * S, 2 * S, 4 * S, p.c);
+    _rect(x, 13 * S, 15 * S, 2 * S, 4 * S, p.g);
+  } else if (kind === 'gunship') {
+    c.width = 76; c.height = 64; const x = c.getContext('2d'); const w = 76; const S = 2;
+    const M = (pts, col) => _mirPoly(x, w, pts.map(v => v * S), col);
+    const pp = STRIKE_PAL.steel;
+    M([19, 31, 24, 26, 25, 6, 19, 1], pp.a); M([23, 9, 36, 13, 36, 22, 24, 24], pp.b);
+    M([30, 20, 33, 20, 33, 29, 30, 29], pp.d);
+    _rect(x, 33 * S, 13 * S, 3 * S, 4 * S, pp.c); _rect(x, 16 * S, 20 * S, 6 * S, 5 * S, pp.g);
+  } else if (kind === 'title') {
+    c.width = 512; c.height = 160; const x = c.getContext('2d');
+    x.fillStyle = '#0a0614'; x.fillRect(0, 0, 512, 160);
+    x.strokeStyle = '#ff7a1a'; x.lineWidth = 6; x.strokeRect(10, 10, 492, 140);
+    x.fillStyle = '#ff7a1a'; x.font = 'bold 72px monospace'; x.textAlign = 'center';
+    x.fillText('STRIKE', 256, 88);
+    x.fillStyle = '#2de8ff'; x.font = 'bold 22px monospace';
+    x.fillText('ARCADE SHMUP', 256, 124);
+  } else if (kind === 'boss') {
+    c.width = 128; c.height = 160; const x = c.getContext('2d');
+    const pp = STRIKE_PAL.elite;
+    // destroyer-ish silhouette
+    x.fillStyle = pp.d; x.beginPath();
+    x.moveTo(64, 8); x.lineTo(96, 28); x.lineTo(108, 90); x.lineTo(96, 140); x.lineTo(64, 152);
+    x.lineTo(32, 140); x.lineTo(20, 90); x.lineTo(32, 28); x.closePath(); x.fill();
+    x.fillStyle = pp.a; x.beginPath();
+    x.moveTo(64, 16); x.lineTo(88, 34); x.lineTo(96, 88); x.lineTo(88, 130); x.lineTo(64, 140);
+    x.lineTo(40, 130); x.lineTo(32, 88); x.lineTo(40, 34); x.closePath(); x.fill();
+    x.fillStyle = pp.c; x.fillRect(58, 50, 12, 40); x.fillStyle = pp.g; x.beginPath(); x.arc(64, 70, 10, 0, Math.PI * 2); x.fill();
+  }
+  return c;
+}
+function strikeTex(THREE, kind) {
+  const c = makeStrikeCanvas(kind);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; t.needsUpdate = true;
+  return t;
+}
+function strikeIconTex(THREE) {
+  const img = new Image();
+  img.src = STRIKE_ICON_DATAURL;
+  const t = new THREE.Texture(img);
+  t.colorSpace = THREE.SRGBColorSpace;
+  img.onload = () => { t.needsUpdate = true; };
+  t.needsUpdate = true;
+  return t;
+}
+function makeStrikeShip3D(THREE, kind) {
+  // Low-poly top-down ships using Strike palette colours
+  const g = new THREE.Group(); g.userData.noMerge = true; g.userData.dynamic = true;
+  const mk = (geo, col, em, ei, x, y, z, sx, sy, sz) => {
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      color: col, emissive: em || col, emissiveIntensity: ei || 0.35, roughness: 0.45, metalness: 0.35,
+    }));
+    m.position.set(x, y, z); if (sx) m.scale.set(sx, sy || sx, sz || sx); g.add(m); return m;
+  };
+  if (kind === 'player') {
+    mk(new THREE.BoxGeometry(0.18, 0.1, 0.55), 0xe6edf8, 0xa0b8e0, 0.25, 0, 0.14, 0);
+    mk(new THREE.ConeGeometry(0.1, 0.22, 6), 0xe6edf8, 0xa0b8e0, 0.25, 0, 0.14, 0.36).rotation.x = Math.PI / 2;
+    mk(new THREE.BoxGeometry(0.78, 0.04, 0.2), 0xaebcd6, 0x2f6cff, 0.45, 0, 0.12, -0.02);
+    mk(new THREE.BoxGeometry(0.5, 0.03, 0.1), 0x2f6cff, 0x2f6cff, 0.9, 0, 0.13, 0.02);
+    mk(new THREE.BoxGeometry(0.1, 0.04, 0.16), 0xff4a4a, 0xff4a4a, 1.0, -0.38, 0.12, -0.02);
+    mk(new THREE.BoxGeometry(0.1, 0.04, 0.16), 0xff4a4a, 0xff4a4a, 1.0, 0.38, 0.12, -0.02);
+    mk(new THREE.CylinderGeometry(0.04, 0.05, 0.1, 6), 0xff9040, 0xff9040, 1.4, -0.08, 0.12, -0.3).rotation.x = Math.PI / 2;
+    mk(new THREE.CylinderGeometry(0.04, 0.05, 0.1, 6), 0xff9040, 0xff9040, 1.4, 0.08, 0.12, -0.3).rotation.x = Math.PI / 2;
+    mk(new THREE.SphereGeometry(0.055, 8, 8), 0x1a60d0, 0xc8f8ff, 1.2, 0, 0.2, 0.08);
+  } else if (kind === 'fighter') {
+    const pa = 0x8c9a6e, pb = 0x56653f, pc = 0xe8603a;
+    mk(new THREE.BoxGeometry(0.14, 0.08, 0.42), pa, pa, 0.3, 0, 0.12, 0);
+    mk(new THREE.ConeGeometry(0.08, 0.18, 5), pa, pa, 0.3, 0, 0.12, 0.28).rotation.x = Math.PI / 2;
+    mk(new THREE.BoxGeometry(0.55, 0.03, 0.16), pb, pc, 0.5, 0, 0.11, -0.02);
+    mk(new THREE.BoxGeometry(0.08, 0.03, 0.12), pc, pc, 1.0, -0.26, 0.11, 0.05);
+    mk(new THREE.BoxGeometry(0.08, 0.03, 0.12), pc, pc, 1.0, 0.26, 0.11, 0.05);
+  } else if (kind === 'bomber') {
+    const pa = 0x8c9a6e, pb = 0x56653f, pc = 0xe8603a;
+    mk(new THREE.BoxGeometry(0.22, 0.12, 0.7), pa, pa, 0.25, 0, 0.14, 0);
+    mk(new THREE.BoxGeometry(0.95, 0.05, 0.28), pb, pb, 0.3, 0, 0.12, -0.05);
+    mk(new THREE.BoxGeometry(0.12, 0.08, 0.2), pc, pc, 0.8, -0.4, 0.14, 0.1);
+    mk(new THREE.BoxGeometry(0.12, 0.08, 0.2), pc, pc, 0.8, 0.4, 0.14, 0.1);
+  } else { // gunship
+    const pa = 0x9aa4b6, pb = 0x5d677c, pc = 0xff8a2a;
+    mk(new THREE.BoxGeometry(0.26, 0.14, 0.85), pa, pa, 0.25, 0, 0.16, 0);
+    mk(new THREE.BoxGeometry(1.1, 0.06, 0.35), pb, pb, 0.3, 0, 0.13, -0.05);
+    mk(new THREE.BoxGeometry(0.14, 0.1, 0.35), pc, pc, 0.9, -0.45, 0.16, 0.15);
+    mk(new THREE.BoxGeometry(0.14, 0.1, 0.35), pc, pc, 0.9, 0.45, 0.16, 0.15);
+    mk(new THREE.BoxGeometry(0.2, 0.08, 0.2), 0x7af0ff, 0x7af0ff, 1.0, 0, 0.22, 0.1);
+  }
+  return g;
+}
+
 function holeStrike(THREE) {
   const H = baseRoom(THREE, { neon: ORANGE, name: 'Strike', num: 1, par: 3, w: 5.2, l: 10 });
-  // (starfield white dots removed — looked like extra golf balls)
-  // Recognisable little fighter ships (top-down arrow / X-wing silhouette)
-  const hull = glow(THREE, 0x6aa8ff, 0.85);
-  const wing = glow(THREE, 0xff4040, 1.0);
-  const cockpit = glow(THREE, CYAN, 1.8);
-  const engine = glow(THREE, 0xffa040, 1.6);
-  const ships = [[-1.3, -2.0, 0.4], [1.4, -0.6, -0.5], [-1.0, 1.0, 1.1], [1.2, 2.4, 0.2], [0.1, 0.4, -1.2], [-1.5, 3.2, 0.8]];
-  ships.forEach(([x, z, rot]) => {
-    const s = new THREE.Group();
-    // Fuselage pointing +Z
-    addMesh(s, new THREE.BoxGeometry(0.22, 0.12, 0.55), hull, 0, 0.16, 0);
-    addMesh(s, new THREE.ConeGeometry(0.12, 0.28, 6), hull, 0, 0.16, 0.38, Math.PI / 2, 0, 0);
-    // Wings
-    addMesh(s, new THREE.BoxGeometry(0.85, 0.04, 0.22), wing, 0, 0.14, -0.05);
-    addMesh(s, new THREE.BoxGeometry(0.12, 0.04, 0.35), wing, -0.36, 0.14, 0.05);
-    addMesh(s, new THREE.BoxGeometry(0.12, 0.04, 0.35), wing, 0.36, 0.14, 0.05);
-    addMesh(s, new THREE.SphereGeometry(0.07, 8, 8), cockpit, 0, 0.24, 0.1);
-    addMesh(s, new THREE.CylinderGeometry(0.05, 0.05, 0.08, 6), engine, -0.12, 0.14, -0.3, Math.PI / 2, 0, 0);
-    addMesh(s, new THREE.CylinderGeometry(0.05, 0.05, 0.08, 6), engine, 0.12, 0.14, -0.3, Math.PI / 2, 0, 0);
+  // Strike-themed fleet (colours/shapes from Strike gfx.js DRAW.player/fighter/bomber/gunship)
+  const fleet = [
+    ['player', 0, -2.2, 0, 0.36],
+    ['fighter', -1.45, -0.8, 0.6, 0.32],
+    ['fighter', 1.5, -1.4, -0.4, 0.32],
+    ['fighter', -1.2, 1.3, 1.0, 0.32],
+    ['bomber', 1.15, 0.7, 0.3, 0.42],
+    ['fighter', 0.2, 2.2, -0.9, 0.32],
+    ['gunship', -1.35, 3.0, 0.5, 0.48],
+    ['fighter', 1.4, 3.3, -0.2, 0.32],
+  ];
+  fleet.forEach(([kind, x, z, rot, rad]) => {
+    const s = makeStrikeShip3D(THREE, kind);
     s.position.set(x, 0.05, z); s.rotation.y = rot; H.group.add(s);
-    H.colliders.push(circleAt(x, z, 0.38));
+    H.colliders.push(circleAt(x, z, rad));
   });
+
+  // Flat bullet-trail decals on the green (Strike player cyan + enemy orange) — NOT spheres
+  const trailCyan = new THREE.MeshBasicMaterial({ color: 0x2f6cff, transparent: true, opacity: 0.55, depthWrite: false });
+  const trailHot = new THREE.MeshBasicMaterial({ color: 0xffe23a, transparent: true, opacity: 0.5, depthWrite: false });
+  const trailRed = new THREE.MeshBasicMaterial({ color: 0xff4a4a, transparent: true, opacity: 0.45, depthWrite: false });
+  [[0.35, -1.5, 0.04, 0.55, trailCyan], [-0.6, 0.2, 0.035, 0.7, trailHot],
+   [0.9, 1.6, 0.04, 0.5, trailCyan], [-0.3, 2.6, 0.03, 0.65, trailRed],
+   [1.1, -2.5, 0.035, 0.4, trailHot], [-1.0, -2.8, 0.03, 0.45, trailCyan],
+   [0.5, 0.9, 0.03, 0.35, trailRed], [-1.2, 2.0, 0.035, 0.5, trailHot]].forEach(([x, z, w, l, mat]) => {
+    const d = addMesh(H.group, new THREE.BoxGeometry(w, 0.012, l), mat, x, 0.095, z);
+    d.userData.noMerge = true;
+  });
+
+  // Wall posters: Strike title + icon + enemy sprite panels + boss silhouette + laser beams
+  const halfW = H.halfW, halfL = H.halfL;
+  const wallPad = 0.22;
+  const farZ = halfL + wallPad - 0.03;
+  const sideL = -halfW - wallPad + 0.03;
+  const sideR = halfW + wallPad - 0.03;
+
+  const titleTex = strikeTex(THREE, 'title');
+  const titleMat = new THREE.MeshBasicMaterial({ map: titleTex, transparent: true });
+  // Sit just in front of baseRoom wall panels (farFace) so art faces camera
+  const artZ = farZ - 0.04;
+  const title = addMesh(H.group, new THREE.PlaneGeometry(2.6, 0.85), titleMat, -1.0, 2.05, artZ);
+  title.rotation.y = Math.PI; title.userData.noMerge = true;
+
+  const iconTex = strikeIconTex(THREE);
+  const iconMat = new THREE.MeshBasicMaterial({ map: iconTex, transparent: true });
+  const icon = addMesh(H.group, new THREE.PlaneGeometry(0.95, 0.95), iconMat, 1.4, 2.1, artZ);
+  icon.rotation.y = Math.PI; icon.userData.noMerge = true;
+
+  const bossTex = strikeTex(THREE, 'boss');
+  const bossMat = new THREE.MeshBasicMaterial({ map: bossTex, transparent: true, opacity: 0.95 });
+  const boss = addMesh(H.group, new THREE.PlaneGeometry(1.25, 1.5), bossMat, 0.2, 1.2, artZ);
+  boss.rotation.y = Math.PI; boss.userData.noMerge = true;
+
+  // Orange laser beams painted on far wall (Strike big-enemy lasers)
+  const laserMat = glow(THREE, 0xff8a1a, 2.4);
+  addMesh(H.group, new THREE.BoxGeometry(2.8, 0.06, 0.04), laserMat, -0.3, 0.85, farZ);
+  addMesh(H.group, new THREE.BoxGeometry(2.2, 0.045, 0.04), laserMat, 0.5, 1.05, farZ);
+  const laserHot = glow(THREE, 0xfff0c0, 2.0);
+  addMesh(H.group, new THREE.BoxGeometry(2.8, 0.02, 0.03), laserHot, -0.3, 0.85, farZ - 0.01);
+
+  // Side-wall enemy sprite posters
+  [['fighter', sideL, -1.5, Math.PI / 2], ['bomber', sideL, 1.2, Math.PI / 2],
+   ['gunship', sideR, -0.8, -Math.PI / 2], ['player', sideR, 1.8, -Math.PI / 2]].forEach(([kind, x, z, ry]) => {
+    const tex = strikeTex(THREE, kind);
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+    const pl = addMesh(H.group, new THREE.PlaneGeometry(0.7, 0.7), mat, x, 1.55, z);
+    pl.rotation.y = ry; pl.userData.noMerge = true;
+  });
+
+  // Flag hole 1 as wanting a rich Strike sky (game.js boosts star density/scroll)
+  H.spaceSky = 'strike';
   return H;
 }
 

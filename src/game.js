@@ -1,9 +1,9 @@
-import * as THREE from '../vendor/three.module.js?v=6';
-import { makeMonkey } from './monkey.js?v=6';
-import { buildHole, HOLE_META } from './holes.js?v=6';
-import { makeBall, putt, stepBall, inBounds, BALL_R, STROKE_CAP, STOP_SPEED } from './physics.js?v=6';
-import { createAudio } from './sfx.js?v=6';
-import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=6';
+import * as THREE from '../vendor/three.module.js?v=7';
+import { makeMonkey } from './monkey.js?v=7';
+import { buildHole, HOLE_META } from './holes.js?v=7';
+import { makeBall, putt, stepBall, inBounds, BALL_R, STROKE_CAP, STOP_SPEED } from './physics.js?v=7';
+import { createAudio } from './sfx.js?v=7';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=7';
 
 const BEST_KEY = 'galacticgolf.best';
 const $=id=>document.getElementById(id);
@@ -17,10 +17,10 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x05050c);
-scene.fog = new THREE.Fog(0x05050c, 20, 42);
+scene.background = new THREE.Color(0x02010a);
+scene.fog = new THREE.FogExp2(0x040318, 0.008);
 
-const camera = new THREE.PerspectiveCamera(52, 1, 0.05, 70);
+const camera = new THREE.PerspectiveCamera(52, 1, 0.05, 160);
 const amb = new THREE.AmbientLight(0x8899cc, 0.55); scene.add(amb);
 const hemi = new THREE.HemisphereLight(0xc8d0ff, 0x1a1030, 0.85); scene.add(hemi);
 const key = new THREE.DirectionalLight(0xfff0dd, 1.15); key.position.set(2.5, 9, -4); scene.add(key);
@@ -37,6 +37,72 @@ const fillDir = new THREE.DirectionalLight(0x88aadd, 0.4); fillDir.position.set(
   scene.environment = pmrem.fromScene(envSc, 0.04).texture;
   pmrem.dispose();
 }
+
+
+// ---- Deep-space sky (Strike-style scrolling stars). Sky only — never on the green. ----
+const spaceSky = (() => {
+  const root = new THREE.Group(); root.name = 'spaceSky'; scene.add(root);
+
+  // Bake a seamless starfield + faint nebulae onto one canvas (phone-light)
+  const W = 2048, H = 1024;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#02010a'; g.fillRect(0, 0, W, H);
+  // Nebula washes
+  function blob(x, y, r, col) {
+    const grd = g.createRadialGradient(x, y, 0, x, y, r);
+    grd.addColorStop(0, col); grd.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grd; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+  blob(220, 180, 220, 'rgba(255,70,170,0.22)');
+  blob(720, 260, 260, 'rgba(40,110,255,0.20)');
+  blob(480, 120, 180, 'rgba(255,140,40,0.14)');
+  blob(900, 80, 140, 'rgba(120,60,255,0.12)');
+  // Soft planet
+  blob(160, 360, 70, 'rgba(160,200,255,0.55)');
+  blob(155, 355, 40, 'rgba(80,120,220,0.45)');
+  // Sharp stars (mostly 1px) — readable when stretched on the sky sphere
+  for (let i = 0; i < 1600; i++) {
+    const x = (Math.random() * W) | 0, y = (Math.random() * H) | 0;
+    const bright = Math.random();
+    if (bright < 0.1) g.fillStyle = '#ffe8b0';
+    else if (bright < 0.28) g.fillStyle = '#b8d8ff';
+    else g.fillStyle = `rgba(255,255,255,${0.65 + bright * 0.35})`;
+    const s = bright > 0.94 ? 2 : 1;
+    g.fillRect(x, y, s, s);
+    if (bright > 0.97) { // tiny cross for brightest
+      g.fillRect(x - 1, y, 3, 1); g.fillRect(x, y - 1, 1, 3);
+    }
+    if (x < 2) g.fillRect(x + W, y, s, s);
+    if (x > W - 3) g.fillRect(x - W, y, s, s);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.needsUpdate = true;
+
+  // Inward sky sphere — follows camera, never intersects the green
+  const skyMat = new THREE.MeshBasicMaterial({
+    map: tex, side: THREE.BackSide, depthWrite: false, fog: false,
+  });
+  const skyMesh = new THREE.Mesh(new THREE.SphereGeometry(70, 32, 20), skyMat);
+  skyMesh.renderOrder = -10; skyMesh.frustumCulled = false; root.add(skyMesh);
+
+  let scrollMul = 1.0;
+  let u = 0, v = 0;
+  return {
+    root,
+    setStrike(on) { scrollMul = on ? 2.4 : 1.0; },
+    update(dt) {
+      // Scroll "down" like Strike shmup background
+      u += dt * 0.03 * scrollMul;
+      v += dt * 0.08 * scrollMul;
+      tex.offset.set(u % 1, v % 1);
+      // Lock sphere to camera so walls open onto deep space
+      root.position.copy(camera.position);
+    },
+  };
+})();
 
 
 // Bright glowing ball + ground ring
@@ -204,6 +270,7 @@ function startHole(i) {
   $('scorecard').classList.remove('on');
   $('final').classList.remove('on');
   if (hole.door) hole.door.visible = false;
+  if (typeof spaceSky !== 'undefined') spaceSky.setStrike(hole.spaceSky === 'strike');
   // snap camera behind tee
   const horiz = Math.cos(camPitch);
   camera.position.set(ball.x + Math.sin(camYaw) * camDist * horiz, 1.1 + Math.sin(camPitch) * camDist, ball.z - Math.cos(camYaw) * camDist * horiz - 0.6);
@@ -532,7 +599,7 @@ renderer.domElement.addEventListener('pointermove', e => {
   const dx = e.clientX - camDrag.x, dy = e.clientY - camDrag.y;
   camDrag.x = e.clientX; camDrag.y = e.clientY;
   camYaw -= dx * 0.005;
-  camPitch = Math.max(0.25, Math.min(1.2, camPitch + dy * 0.004));
+  camPitch = Math.max(0.25, Math.min(1.35, camPitch + dy * 0.004));
 }, { passive: true });
 renderer.domElement.addEventListener('pointerup', e => { if (camDrag && e.pointerId === camDrag.id) camDrag = null; });
 renderer.domElement.addEventListener('pointercancel', e => { if (camDrag && e.pointerId === camDrag.id) camDrag = null; });
@@ -581,6 +648,7 @@ $('btnAgain').onclick = () => {
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (typeof spaceSky !== 'undefined') spaceSky.update(dt);
   if (hole && hole.movers) for (const m of hole.movers) m.update(dt);
 
   if (phase === 'rolling' && hole) {
@@ -656,6 +724,11 @@ window.__golf = {
   get camDist() { return camDist; },
   get camLimits() { return { min: CAM_DIST_MIN, max: CAM_DIST_MAX, def: CAM_DIST_DEFAULT }; },
   setZoom(d) { camDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, d)); },
+  setCam(y, p, d) {
+    if (y != null) camYaw = y;
+    if (p != null) camPitch = Math.max(0.25, Math.min(1.35, p));
+    if (d != null) camDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, d));
+  },
   get aimVisible() { return !!(aimLine && aimLine.visible); },
   get aiming() { return aiming; },
   cancelAim,
