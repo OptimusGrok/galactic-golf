@@ -1,6 +1,6 @@
 // Nine themed neon rooms. Static meshes are merged per material to keep draw calls low.
-import { BALL_R } from './physics.js?v=5';
-import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=5';
+import { BALL_R } from './physics.js?v=6';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=6';
 
 let T = null; // set per buildHole
 const GREEN = 0x0e6a30;
@@ -354,21 +354,26 @@ function holeGhost(THREE) {
   const H = baseRoom(THREE, { neon: MAG, name: 'Ghost 256', num: 2, par: 3, w: 5.5, l: 10 });
   const wall = glow(THREE, 0x1a3aee, 1.1);
   const wallTop = glow(THREE, 0x40a0ff, 1.4);
+  // Fair Pac-maze: tee → right-gap bar → left-gap bar → cup. Gaps ≥ 1.5wu (~16 ball diameters).
+  // No vertical sealed into the south rail (that trapped the tee on the old layout).
   const walls = [
-    [-1.6, -2.2, 0.18, 2.8], [1.6, -2.2, 0.18, 2.8],
-    [-0.5, -0.2, 2.0, 0.18], [0.5, 1.6, 2.0, 0.18],
-    [-1.6, 2.6, 0.18, 2.2], [1.6, 2.6, 0.18, 2.2],
-    [0, -3.5, 2.4, 0.18], [0, 0.7, 0.18, 1.0],
-    [-2.2, 0.7, 0.18, 1.4], [2.2, 0.7, 0.18, 1.4],
+    // Bar A (south): opens RIGHT. x∈[-2.2, 1.0] → right gap 1.0..2.75 = 1.75
+    [-0.6, -1.6, 1.6, 0.16],
+    // Decorative side stubs (leave corridors open)
+    [-2.05, -0.2, 0.14, 0.9],
+    [2.05, 0.4, 0.14, 0.9],
+    // Bar B (north): opens LEFT. x∈[-1.0, 2.2] → left gap -2.75..-1.0 = 1.75
+    [0.6, 1.5, 1.6, 0.16],
+    // Cup approach posts (wide center lane)
+    [-1.35, 3.1, 0.14, 0.7],
+    [1.35, 3.1, 0.14, 0.7],
   ];
   walls.forEach(([x, z, hw, hd]) => {
     addMesh(H.group, new THREE.BoxGeometry(hw * 2, 0.55, hd * 2), wall, x, 0.32, z);
-    // Pixel-ish glowing top lip
     addMesh(H.group, new THREE.BoxGeometry(hw * 2 + 0.04, 0.06, hd * 2 + 0.04), wallTop, x, 0.62, z);
     H.colliders.push(aabbAround(x, z, hw, hd));
   });
-  // (scattered pellet spheres removed — looked like small balls on the green)
-  // Pink ghost — patrol open corridors only (waypoints clear of maze AABBs)
+  // Pink ghost — LEFT alley only (never seals the right-hand Bar A gap)
   const ghost = new THREE.Group(); ghost.userData.dynamic = true; ghost.userData.noMerge = true;
   const gMat = glow(THREE, MAG, 1.7);
   addMesh(ghost, new THREE.SphereGeometry(0.22, 14, 12), gMat, 0, 0.30, 0);
@@ -380,22 +385,17 @@ function holeGhost(THREE) {
   addMesh(ghost, new THREE.SphereGeometry(0.06, 8, 8), mat(THREE, 0xffffff), 0.08, 0.38, 0.2);
   addMesh(ghost, new THREE.SphereGeometry(0.03, 6, 6), mat(THREE, 0x111111), -0.08, 0.38, 0.26);
   addMesh(ghost, new THREE.SphereGeometry(0.03, 6, 6), mat(THREE, 0x111111), 0.08, 0.38, 0.26);
-  // Patrol only open south corridors (never crosses maze AABBs)
-  // Center lane x=0, z=-2.85..-0.55; right pocket x=0.9 south of mid wall; left pocket x=-0.9
-  // Stay in the open south pocket — clear of every maze AABB (margin ≥ 0.45)
   const gPath = [
-    [0.0, -2.7], [0.7, -2.7], [0.7, -1.4], [0.0, -1.4],
-    [-0.7, -1.4], [-0.7, -2.7], [0.0, -2.7],
+    [-2.15, -3.0], [-2.15, -0.8], [-2.15, 0.6], [-2.15, -1.5], [-2.15, -3.0],
   ];
   ghost.position.set(gPath[0][0], 0, gPath[0][1]); H.group.add(ghost);
-  const gCol = circleAt(gPath[0][0], gPath[0][1], 0.20); H.colliders.push(gCol);
-  // Maze blocks only (skip room boundary AABBs which are huge)
+  const gCol = circleAt(gPath[0][0], gPath[0][1], 0.18); H.colliders.push(gCol);
   const mazeWalls = H.colliders.filter(c => c.type === 'aabb' && (c.maxX - c.minX) < 6 && (c.maxZ - c.minZ) < 8);
   H.movers.push({
     kind: 'ghost', mesh: ghost, col: gCol, t: 0, path: gPath, seg: 0, _d: 0,
     update(dt) {
       this.t += dt;
-      const speed = 1.0;
+      const speed = 0.9;
       if (this._d == null) this._d = 0;
       const a = this.path[this.seg];
       const b = this.path[(this.seg + 1) % this.path.length];
@@ -413,7 +413,6 @@ function holeGhost(THREE) {
       const len2 = Math.hypot(dx2, dz2) || 1;
       const u = Math.min(1, this._d / len2);
       let x = a2[0] + dx2 * u, z = a2[1] + dz2 * u;
-      // Push out of maze walls so the ghost never clips
       const gr = gCol.r + 0.08;
       for (const w of mazeWalls) {
         const cx = Math.max(w.minX, Math.min(x, w.maxX));

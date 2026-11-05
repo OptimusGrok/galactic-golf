@@ -1,9 +1,9 @@
-import * as THREE from '../vendor/three.module.js?v=5';
-import { makeMonkey } from './monkey.js?v=5';
-import { buildHole, HOLE_META } from './holes.js?v=5';
-import { makeBall, putt, stepBall, inBounds, BALL_R, STROKE_CAP, STOP_SPEED } from './physics.js?v=5';
-import { createAudio } from './sfx.js?v=5';
-import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=5';
+import * as THREE from '../vendor/three.module.js?v=6';
+import { makeMonkey } from './monkey.js?v=6';
+import { buildHole, HOLE_META } from './holes.js?v=6';
+import { makeBall, putt, stepBall, inBounds, BALL_R, STROKE_CAP, STOP_SPEED } from './physics.js?v=6';
+import { createAudio } from './sfx.js?v=6';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=6';
 
 const BEST_KEY = 'galacticgolf.best';
 const $=id=>document.getElementById(id);
@@ -664,8 +664,39 @@ window.__golf = {
   get scores() { return scores.slice(); },
   get ball() { return { x: ball.x, y: ball.y, z: ball.z, vx: ball.vx, vz: ball.vz, sunk: ball.sunk }; },
   get meta() { return HOLE_META; },
-  place(x, z) { ball.x = x; ball.z = z; ball.vx = ball.vz = 0; ball.rolling = false; ball.sunk = false; ball.y = BALL_R; phase = 'aim'; placeMonkey(); },
+  get cup() { return hole ? { x: hole.cup.x, z: hole.cup.z, r: hole.cup.r } : null; },
+  get tee() { return hole ? { x: hole.tee.x, z: hole.tee.z } : null; },
+  get par() { return hole ? hole.par : HOLE_META[holeIndex].par; },
+  place(x, z) { ball.x = x; ball.z = z; ball.vx = ball.vz = 0; ball.rolling = false; ball.sunk = false; ball.y = BALL_R; ballMesh.visible = true; phase = 'aim'; placeMonkey(); },
   putt(angle, power) { doPutt(angle, power); },
+  /** Offline simulate a putt from current ball pose; does not mutate live ball. */
+  probe(angle, power) {
+    if (!hole) return null;
+    const b = { x: ball.x, y: ball.y, z: ball.z, vx: 0, vy: 0, vz: 0, rolling: true, sunk: false };
+    putt(b, angle, power);
+    const dt = 1 / 60;
+    for (let i = 0; i < 600; i++) {
+      const res = stepBall(b, hole.colliders, hole.ramps, dt, hole.cup);
+      if (res.sunk || b.sunk) return { sunk: true, x: b.x, z: b.z, dist: 0, steps: i };
+      if (!b.rolling && Math.hypot(b.vx, b.vz) < STOP_SPEED) break;
+    }
+    const dist = Math.hypot(b.x - hole.cup.x, b.z - hole.cup.z);
+    return { sunk: !!b.sunk, x: b.x, z: b.z, dist, steps: -1 };
+  },
+  /** Park movers off-green so reachability tests prove static geometry is open. */
+  parkMovers() {
+    if (!hole || !hole.movers) return;
+    for (const m of hole.movers) {
+      m.update = () => {};
+      if (m.mesh) { m.mesh.visible = false; m.mesh.position.set(40, 0, 40); }
+      if (m.col) {
+        if (m.col.type === 'circle') { m.col.x = 40; m.col.z = 40; m.col.r = 0.01; }
+        else if (m.col.type === 'aabb') {
+          m.col.minX = 40; m.col.maxX = 41; m.col.minZ = 40; m.col.maxZ = 41;
+        }
+      }
+    }
+  },
   sink() {
     if (!hole) return;
     strokes = Math.max(1, strokes || 1);
