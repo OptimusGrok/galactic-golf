@@ -1,6 +1,6 @@
 // Nine themed neon rooms. Static meshes are merged per material to keep draw calls low.
-import { BALL_R } from './physics.js';
-import { mergeGeometries } from '../vendor/BufferGeometryUtils.js';
+import { BALL_R } from './physics.js?v=2';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=2';
 
 let T = null; // set per buildHole
 const GREEN = 0x0e6a30;

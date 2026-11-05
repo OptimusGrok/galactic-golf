@@ -1,9 +1,9 @@
-import * as THREE from '../vendor/three.module.js';
-import { makeMonkey } from './monkey.js';
-import { buildHole, HOLE_META } from './holes.js';
-import { makeBall, putt, stepBall, inBounds, BALL_R, STROKE_CAP, STOP_SPEED } from './physics.js';
-import { createAudio } from './sfx.js';
-import { mergeGeometries } from '../vendor/BufferGeometryUtils.js';
+import * as THREE from '../vendor/three.module.js?v=2';
+import { makeMonkey } from './monkey.js?v=2';
+import { buildHole, HOLE_META } from './holes.js?v=2';
+import { makeBall, putt, stepBall, inBounds, BALL_R, STROKE_CAP, STOP_SPEED } from './physics.js?v=2';
+import { createAudio } from './sfx.js?v=2';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=2';
 
 const BEST_KEY = 'galacticgolf.best';
 const $=id=>document.getElementById(id);
@@ -11,6 +11,7 @@ const $=id=>document.getElementById(id);
 const audio = createAudio();
 const renderer = new THREE.WebGLRenderer({ canvas: $('c'), antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.domElement.style.touchAction = 'none';
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
@@ -153,7 +154,10 @@ let strokes = 0;
 let scores = [];
 let phase = 'aim'; // aim | rolling | scored | final | transition
 let swingT = 0;
-let camYaw = 0.04, camPitch = 0.68, camDist = 12.2;
+const CAM_DIST_DEFAULT = 9.5;
+const CAM_DIST_MIN = 4.0;   // zoomed in — still above the floor
+const CAM_DIST_MAX = 14.0;  // zoomed out — whole hole visible
+let camYaw = 0.04, camPitch = 0.68, camDist = CAM_DIST_DEFAULT;
 let aiming = false, aimAngle = 0, aimPower = 0;
 let pointerId = null, dragStart = null;
 let lastBounceT = 0;
@@ -195,7 +199,7 @@ function startHole(i) {
   ballMesh.visible = true; ballMesh.position.set(ball.x, BALL_VIS, ball.z);
   phase = 'aim';
   placeMonkey();
-  camYaw = 0.04; camPitch = 0.68; camDist = 12.2;
+  camYaw = 0.04; camPitch = 0.68; camDist = CAM_DIST_DEFAULT;
   updateHUD();
   $('scorecard').classList.remove('on');
   $('final').classList.remove('on');
@@ -346,9 +350,22 @@ function worldFromPointer(clientX, clientY) {
   return hit;
 }
 
+function cancelAim() {
+  if (!aiming) { aimLine.visible = false; powerWrap.classList.remove('on'); return; }
+  aiming = false; pointerId = null; aimPower = 0;
+  aimLine.visible = false; powerWrap.classList.remove('on');
+  powerFill.style.height = '0%';
+}
+
 function onDown(e) {
   if (phase !== 'aim') return;
   if (e.target.closest && e.target.closest('button,.card')) return;
+  // Tracker already recorded this pointer. size>1 means a pinch — never aim/putt.
+  if (activePointers.size > 1 || (aiming && e.pointerId !== pointerId)) {
+    cancelAim();
+    camDrag = null;
+    return;
+  }
   audio.resume(); audio.startMusic();
   const hit = worldFromPointer(e.clientX, e.clientY);
   if (!hit) return;
@@ -361,10 +378,8 @@ function onDown(e) {
   e.preventDefault();
 }
 function onMove(e) {
-  if (!aiming || e.pointerId !== pointerId) {
-    // camera drag with two fingers / right mouse handled separately
-    return;
-  }
+  if (!aiming || e.pointerId !== pointerId) return;
+  if (activePointers.size > 1) { cancelAim(); return; }
   const hit = worldFromPointer(e.clientX, e.clientY);
   if (!hit) return;
   // Pull back from ball: aim is opposite of drag direction from ball
@@ -380,20 +395,58 @@ function onUp(e) {
   if (!aiming || e.pointerId !== pointerId) return;
   aiming = false; pointerId = null;
   aimLine.visible = false; powerWrap.classList.remove('on');
-  if (aimPower > 0.06) doPutt(aimAngle, aimPower);
+  if (aimPower > 0.06 && activePointers.size <= 1) doPutt(aimAngle, aimPower);
   aimPower = 0; powerFill.style.height = '0%';
   e.preventDefault();
 }
+
+const activePointers = new Map(); // id -> {x,y}
+let pinchStartDist = 0, pinchStartCam = CAM_DIST_DEFAULT;
+
+renderer.domElement.addEventListener('pointerdown', e => {
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size === 2) {
+    cancelAim();
+    camDrag = null;
+    const pts = [...activePointers.values()];
+    pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+    pinchStartCam = camDist;
+  }
+}, { passive: true });
+renderer.domElement.addEventListener('pointermove', e => {
+  if (!activePointers.has(e.pointerId)) return;
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size >= 2) {
+    cancelAim();
+    const pts = [...activePointers.values()];
+    const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
+    // Pinch out (larger distance) = zoom in (smaller camDist)
+    const scale = pinchStartDist / d;
+    camDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, pinchStartCam * scale));
+  }
+}, { passive: true });
+function clearPointer(e) {
+  activePointers.delete(e.pointerId);
+  if (activePointers.size < 2) { pinchStartDist = 0; }
+  if (activePointers.size === 1) {
+    // Reset pinch baseline if one finger remains (so a new second finger starts clean)
+    const pts = [...activePointers.values()];
+    pinchStartDist = 0;
+    pinchStartCam = camDist;
+  }
+}
+renderer.domElement.addEventListener('pointerup', clearPointer, { passive: true });
+renderer.domElement.addEventListener('pointercancel', clearPointer, { passive: true });
 
 renderer.domElement.addEventListener('pointerdown', onDown, { passive: false });
 renderer.domElement.addEventListener('pointermove', onMove, { passive: false });
 renderer.domElement.addEventListener('pointerup', onUp, { passive: false });
 renderer.domElement.addEventListener('pointercancel', onUp, { passive: false });
 
-// Camera orbit: second touch or drag away from ball / buttons
+// Camera orbit: drag away from ball / buttons (single finger / mouse)
 let camDrag = null;
 renderer.domElement.addEventListener('pointerdown', e => {
-  if (aiming) return;
+  if (aiming || activePointers.size > 1) return;
   if (e.target.closest && e.target.closest('button,.card')) return;
   if (phase === 'aim') {
     const hit = worldFromPointer(e.clientX, e.clientY);
@@ -402,15 +455,16 @@ renderer.domElement.addEventListener('pointerdown', e => {
   camDrag = { id: e.pointerId, x: e.clientX, y: e.clientY };
 }, { passive: true });
 renderer.domElement.addEventListener('pointermove', e => {
-  if (!camDrag || e.pointerId !== camDrag.id || aiming) return;
+  if (!camDrag || e.pointerId !== camDrag.id || aiming || activePointers.size > 1) return;
   const dx = e.clientX - camDrag.x, dy = e.clientY - camDrag.y;
   camDrag.x = e.clientX; camDrag.y = e.clientY;
   camYaw -= dx * 0.005;
   camPitch = Math.max(0.25, Math.min(1.2, camPitch + dy * 0.004));
 }, { passive: true });
 renderer.domElement.addEventListener('pointerup', e => { if (camDrag && e.pointerId === camDrag.id) camDrag = null; });
+renderer.domElement.addEventListener('pointercancel', e => { if (camDrag && e.pointerId === camDrag.id) camDrag = null; });
 renderer.domElement.addEventListener('wheel', e => {
-  camDist = Math.max(3.5, Math.min(12, camDist + e.deltaY * 0.01));
+  camDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, camDist + e.deltaY * 0.012));
   e.preventDefault();
 }, { passive: false });
 
@@ -503,6 +557,12 @@ function frame(now) {
 // ---- Test hook ----
 window.__golf = {
   get hole() { return holeIndex + 1; },
+  get camDist() { return camDist; },
+  get camLimits() { return { min: CAM_DIST_MIN, max: CAM_DIST_MAX, def: CAM_DIST_DEFAULT }; },
+  setZoom(d) { camDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, d)); },
+  get aimVisible() { return !!(aimLine && aimLine.visible); },
+  get aiming() { return aiming; },
+  cancelAim,
   get strokes() { return strokes; },
   get phase() { return phase; },
   get scores() { return scores.slice(); },
