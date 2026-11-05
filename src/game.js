@@ -51,9 +51,26 @@ const ballGlow = new THREE.Mesh(
 );
 ballGlow.rotation.x = Math.PI / 2; scene.add(ballGlow);
 
-// Aim line
-const aimGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0, 0.02, 1)]);
-const aimLine = new THREE.Line(aimGeo, new THREE.LineBasicMaterial({ color: 0x2de8ff, transparent: true, opacity: 0.85 }));
+// Aim line: thick glowing ribbon + arrowhead, drawn on top so felt/props never hide it
+const aimLine = new THREE.Group();
+const aimMat = new THREE.MeshBasicMaterial({ color: 0x2de8ff, transparent: true, opacity: 0.95, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+const aimGlowMat = new THREE.MeshBasicMaterial({ color: 0x2de8ff, transparent: true, opacity: 0.35, depthTest: false, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+const ribGeo = new THREE.PlaneGeometry(1, 1); ribGeo.rotateX(-Math.PI / 2); ribGeo.translate(0, 0, 0.5);
+const aimRib = new THREE.Mesh(ribGeo, aimMat); aimRib.scale.set(0.11, 1, 1);
+const aimGlow = new THREE.Mesh(ribGeo, aimGlowMat); aimGlow.scale.set(0.32, 1, 1);
+const headShape = new THREE.Shape(); headShape.moveTo(-0.24, 0); headShape.lineTo(0.24, 0); headShape.lineTo(0, 0.42); headShape.closePath();
+const headGeo = new THREE.ShapeGeometry(headShape); headGeo.rotateX(Math.PI / 2);
+const aimHead = new THREE.Mesh(headGeo, aimMat);
+aimLine.add(aimGlow, aimRib, aimHead);
+aimLine.traverse(o => { o.renderOrder = 999; o.frustumCulled = false; });
+aimLine.position.y = 0.12;
+function setAim(angle, power) {
+  const len = 0.5 + power * 3.2;
+  aimLine.position.x = ball.x; aimLine.position.z = ball.z; aimLine.rotation.y = angle;
+  aimRib.scale.z = len; aimGlow.scale.z = len; aimHead.position.z = len;
+  const c = new THREE.Color(0x2de8ff).lerp(new THREE.Color(0xff3df0), power);
+  aimMat.color.copy(c); aimGlowMat.color.copy(c);
+}
 aimLine.visible = false; scene.add(aimLine);
 
 // Power meter DOM is in HTML
@@ -340,7 +357,7 @@ function onDown(e) {
   aiming = true; pointerId = e.pointerId;
   dragStart = { x: hit.x, z: hit.z };
   try { renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
-  aimLine.visible = true; powerWrap.classList.add('on');
+  aimAngle = 0; aimPower = 0; setAim(aimAngle, 0.0); aimLine.visible = true; powerWrap.classList.add('on');
   e.preventDefault();
 }
 function onMove(e) {
@@ -355,11 +372,7 @@ function onMove(e) {
   const dist = Math.hypot(dx, dz);
   aimAngle = Math.atan2(dx, dz);
   aimPower = Math.min(1, dist / 2.2);
-  // Aim line
-  const len = 0.4 + aimPower * 2.5;
-  const p0 = new THREE.Vector3(ball.x, 0.04, ball.z);
-  const p1 = new THREE.Vector3(ball.x + Math.sin(aimAngle) * len, 0.04, ball.z + Math.cos(aimAngle) * len);
-  aimGeo.setFromPoints([p0, p1]);
+  setAim(aimAngle, aimPower);
   powerFill.style.height = (aimPower * 100) + '%';
   e.preventDefault();
 }
