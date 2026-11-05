@@ -1,6 +1,6 @@
 // Nine themed neon rooms. Static meshes are merged per material to keep draw calls low.
-import { BALL_R } from './physics.js?v=2';
-import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=2';
+import { BALL_R } from './physics.js?v=3';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=3';
 
 let T = null; // set per buildHole
 const GREEN = 0x0e6a30;
@@ -171,67 +171,77 @@ function baseRoom(THREE, opts) {
   const floorMap = floorTex(THREE);
   floorMap.wrapS = floorMap.wrapT = THREE.RepeatWrapping; floorMap.repeat.set(6, 10);
 
-  // Glossy dark room floor (around + under)
+  const wallPad = 0.22; // room walls sit just outside neon rails
+  // Room hugs the green: no empty floor border. Gloss underlay matches course footprint.
+  const roomMargin = 0.08; // tiny under-rail strip only
   const roomFloor = addMesh(group,
-    new THREE.PlaneGeometry(w + 8, l + 8),
+    new THREE.PlaneGeometry(w + wallPad * 2 + roomMargin, l + wallPad * 2 + roomMargin),
     mat(THREE, 0x07070e, { map: floorMap, roughness: 0.18, metalness: 0.92, envMapIntensity: 1.05 }),
     0, 0, 0, -Math.PI / 2, 0, 0);
 
-  // Brighter green felt
+  // Green felt fills the room floor wall-to-wall (rails sit on its edges)
   const green = addMesh(group,
     new THREE.BoxGeometry(w, 0.08, l),
     mat(THREE, GREEN, { map: feltMap, roughness: 0.9, metalness: 0.02 }),
     0, 0.04, 0);
 
-  // Neon edge rails
+  // Neon edge rails = room perimeter
   const railMat = glow(THREE, neon, 3.4);
   const wallH = 0.22, wallT = 0.14;
   addMesh(group, new THREE.BoxGeometry(wallT, wallH, l + wallT * 2), railMat, -halfW - wallT / 2, wallH / 2, 0);
   addMesh(group, new THREE.BoxGeometry(wallT, wallH, l + wallT * 2), railMat, halfW + wallT / 2, wallH / 2, 0);
   addMesh(group, new THREE.BoxGeometry(w + wallT * 2, wallH, wallT), railMat, 0, wallH / 2, -halfL - wallT / 2);
   addMesh(group, new THREE.BoxGeometry(w + wallT * 2, wallH, wallT), railMat, 0, wallH / 2, halfL + wallT / 2);
-  // Soft outer glow — short segments near cup only (not full-length side beams)
+  // Soft outer glow along rails near cup
   const soft = glow(THREE, neon, 1.0);
-  addMesh(group, new THREE.BoxGeometry(0.06, 0.06, 2.2), soft, -halfW - 0.22, 0.04, halfL - 1.5);
-  addMesh(group, new THREE.BoxGeometry(0.06, 0.06, 2.2), soft, halfW + 0.22, 0.04, halfL - 1.5);
+  addMesh(group, new THREE.BoxGeometry(0.05, 0.05, 2.0), soft, -halfW - wallT - 0.02, 0.04, halfL - 1.5);
+  addMesh(group, new THREE.BoxGeometry(0.05, 0.05, 2.0), soft, halfW + wallT + 0.02, 0.04, halfL - 1.5);
 
-  // Wall colliders
+  // Wall colliders (play bounds = green edges)
   colliders.push({ type: 'aabb', minX: -halfW - 1, maxX: -halfW, minZ: -halfL - 1, maxZ: halfL + 1 });
   colliders.push({ type: 'aabb', minX: halfW, maxX: halfW + 1, minZ: -halfL - 1, maxZ: halfL + 1 });
   colliders.push({ type: 'aabb', minX: -halfW - 1, maxX: halfW + 1, minZ: -halfL - 1, maxZ: -halfL });
   colliders.push({ type: 'aabb', minX: -halfW - 1, maxX: halfW + 1, minZ: halfL, maxZ: halfL + 1 });
 
-  // Room walls with neon trim
+  // Room walls hug the rails (green runs wall to wall)
   const wallMat = mat(THREE, 0x080810, { roughness: 0.75, metalness: 0.35, envMapIntensity: 0.6 });
   const roomH = 3.4;
-  // Far wall (behind cup)
-  addMesh(group, new THREE.BoxGeometry(w + 5, roomH, 0.2), wallMat, 0, roomH / 2, halfL + 1.1);
+  const wallX = halfW + wallPad;      // just outside rails
+  const wallFarZ = halfL + wallPad;
+  const wallNearZ = -halfL - wallPad;
+  const wallThick = 0.16;
+  // Far wall (behind cup) — holds sign
+  addMesh(group, new THREE.BoxGeometry(w + wallPad * 2 + wallThick * 2, roomH, wallThick), wallMat, 0, roomH / 2, wallFarZ + wallThick / 2);
+  // Near wall (behind tee) — low enough visually under camera pitch but seals the floor
+  addMesh(group, new THREE.BoxGeometry(w + wallPad * 2 + wallThick * 2, roomH, wallThick), wallMat, 0, roomH / 2, wallNearZ - wallThick / 2);
   // Side walls
-  addMesh(group, new THREE.BoxGeometry(0.2, roomH, l + 3), wallMat, -halfW - 2.0, roomH / 2, 0);
-  addMesh(group, new THREE.BoxGeometry(0.2, roomH, l + 3), wallMat, halfW + 2.0, roomH / 2, 0);
-  // Near side stays open for the elevated camera (no blocking stubs)
-  // Corner pillars instead so the room still reads as enclosed
-  const pillar = glow(THREE, neon, 1.1);
-  addMesh(group, new THREE.BoxGeometry(0.18, roomH, 0.18), pillar, -halfW - 1.9, roomH / 2, halfL + 1.0);
-  addMesh(group, new THREE.BoxGeometry(0.18, roomH, 0.18), pillar, halfW + 1.9, roomH / 2, halfL + 1.0);
-  // Neon accents behind the cup only — never long spans that float over the green in top-down view
+  addMesh(group, new THREE.BoxGeometry(wallThick, roomH, l + wallPad * 2 + wallThick * 2), wallMat, -wallX - wallThick / 2, roomH / 2, 0);
+  addMesh(group, new THREE.BoxGeometry(wallThick, roomH, l + wallPad * 2 + wallThick * 2), wallMat, wallX + wallThick / 2, roomH / 2, 0);
+  // Corner neon pillars flush to room corners
+  const pillar = glow(THREE, neon, 1.2);
+  const cx = wallX + wallThick / 2, czF = wallFarZ + wallThick / 2, czN = wallNearZ - wallThick / 2;
+  addMesh(group, new THREE.BoxGeometry(0.14, roomH, 0.14), pillar, -cx, roomH / 2, czF);
+  addMesh(group, new THREE.BoxGeometry(0.14, roomH, 0.14), pillar, cx, roomH / 2, czF);
+  addMesh(group, new THREE.BoxGeometry(0.14, roomH, 0.14), pillar, -cx, roomH / 2, czN);
+  addMesh(group, new THREE.BoxGeometry(0.14, roomH, 0.14), pillar, cx, roomH / 2, czN);
+  // Neon accents on far wall only (never across the green)
   const stripA = glow(THREE, neon, 2.2);
   const stripB = glow(THREE, neon === MAG ? CYAN : neon === CYAN ? MAG : CYAN, 1.8);
-  // Short baseboard neon on far wall (low, behind cup)
-  addMesh(group, new THREE.BoxGeometry(w + 3.2, 0.07, 0.07), stripA, 0, 0.35, halfL + 0.98);
-  addMesh(group, new THREE.BoxGeometry(w * 0.7, 0.06, 0.06), stripB, 0, 0.55, halfL + 0.98);
-  // Vertical posts at far corners only
-  addMesh(group, new THREE.BoxGeometry(0.09, 2.2, 0.09), stripA, -halfW - 1.88, 1.3, halfL + 0.98);
-  addMesh(group, new THREE.BoxGeometry(0.09, 2.2, 0.09), stripB, halfW + 1.88, 1.3, halfL + 0.98);
-  // Neon wall panels so the room reads as enclosed, not void
+  const farFace = wallFarZ - 0.01;
+  addMesh(group, new THREE.BoxGeometry(w * 0.95, 0.07, 0.07), stripA, 0, 0.35, farFace);
+  addMesh(group, new THREE.BoxGeometry(w * 0.55, 0.06, 0.06), stripB, 0, 0.55, farFace);
+  addMesh(group, new THREE.BoxGeometry(0.08, 2.0, 0.08), stripA, -halfW + 0.15, 1.3, farFace);
+  addMesh(group, new THREE.BoxGeometry(0.08, 2.0, 0.08), stripB, halfW - 0.15, 1.3, farFace);
+  // Wall panels on far + side walls (flush)
   const panelA = glow(THREE, neon, 0.35);
   const panelB = glow(THREE, neon === MAG ? CYAN : neon === CYAN ? ORANGE : MAG, 0.28);
-  addMesh(group, new THREE.BoxGeometry(1.4, 1.1, 0.04), panelA, -1.6, 1.7, halfL + 0.98);
-  addMesh(group, new THREE.BoxGeometry(1.4, 1.1, 0.04), panelB, 1.6, 1.7, halfL + 0.98);
-  addMesh(group, new THREE.BoxGeometry(0.04, 1.4, 2.2), panelA, -halfW - 1.88, 1.6, -2);
-  addMesh(group, new THREE.BoxGeometry(0.04, 1.4, 2.2), panelB, halfW + 1.88, 1.6, -2);
-  addMesh(group, new THREE.BoxGeometry(0.04, 1.4, 2.2), panelB, -halfW - 1.88, 1.6, 2);
-  addMesh(group, new THREE.BoxGeometry(0.04, 1.4, 2.2), panelA, halfW + 1.88, 1.6, 2);
+  addMesh(group, new THREE.BoxGeometry(Math.min(1.5, w * 0.35), 1.0, 0.04), panelA, -w * 0.28, 1.7, farFace);
+  addMesh(group, new THREE.BoxGeometry(Math.min(1.5, w * 0.35), 1.0, 0.04), panelB, w * 0.28, 1.7, farFace);
+  const sideFaceL = -wallX + 0.01, sideFaceR = wallX - 0.01;
+  addMesh(group, new THREE.BoxGeometry(0.04, 1.2, Math.min(2.0, l * 0.28)), panelA, sideFaceL, 1.5, -l * 0.2);
+  addMesh(group, new THREE.BoxGeometry(0.04, 1.2, Math.min(2.0, l * 0.28)), panelB, sideFaceR, 1.5, -l * 0.2);
+  addMesh(group, new THREE.BoxGeometry(0.04, 1.2, Math.min(2.0, l * 0.28)), panelB, sideFaceL, 1.5, l * 0.2);
+  addMesh(group, new THREE.BoxGeometry(0.04, 1.2, Math.min(2.0, l * 0.28)), panelA, sideFaceR, 1.5, l * 0.2);
 
   // Cup with glowing ring
   const cupZ = halfL - 0.95;
@@ -244,9 +254,9 @@ function baseRoom(THREE, opts) {
   const flag = makeFlag(THREE, num, css);
   flag.position.set(cupX, 0.08, cupZ); flag.userData.noMerge = true; group.add(flag);
 
-  // Neon sign mounted on far wall
+  // Neon sign mounted on far wall (hugged to course)
   const sign = makeSign(THREE, num + '. ' + name.toUpperCase(), css);
-  sign.position.set(0, 2.55, halfL + 0.98); sign.rotation.y = Math.PI;
+  sign.position.set(0, 2.55, halfL + wallPad - 0.02); sign.rotation.y = Math.PI;
   sign.userData.noMerge = true; group.add(sign);
 
   // Exit teleporter beyond cup (hidden until sink)
@@ -259,7 +269,7 @@ function baseRoom(THREE, opts) {
   const disc = addMesh(door, new THREE.CircleGeometry(0.5, 24),
     new THREE.MeshBasicMaterial({ color: 0x66f0ff, transparent: true, opacity: 0.35, side: THREE.DoubleSide }),
     0, 1.25, 0);
-  door.position.set(0, 0, halfL + 1.55); group.add(door);
+  door.position.set(0, 0, halfL + wallPad + 0.55); group.add(door);
 
   // Lights local to room
   const pl = new THREE.PointLight(neon, 2.4, 16, 2); pl.position.set(0, 3.2, 0); group.add(pl);

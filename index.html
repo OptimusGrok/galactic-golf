@@ -48,6 +48,12 @@ html,body{margin:0;height:100%;overflow:hidden;background:#080814;touch-action:n
 #fade.on{opacity:1}
 #hint{position:fixed;bottom:max(70px,calc(env(safe-area-inset-bottom) + 58px));left:0;right:0;text-align:center;font-size:12px;
   opacity:.7;pointer-events:none;z-index:2}
+#zoomBtns{position:fixed;right:max(10px,env(safe-area-inset-right));top:max(88px,calc(env(safe-area-inset-top) + 78px));
+  z-index:4;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+#zoomBtns button{pointer-events:auto;width:42px;height:42px;border-radius:12px;border:2px solid #2de8ff;
+  background:rgba(20,8,40,.88);color:#fff;font-weight:900;font-size:22px;line-height:1;
+  box-shadow:0 0 14px #2de8ff55;padding:0}
+#zoomBtns button:active{transform:scale(.95);border-color:#ff2bd6}
 </style>
 </head>
 <body>
@@ -61,6 +67,10 @@ html,body{margin:0;height:100%;overflow:hidden;background:#080814;touch-action:n
   <span class="chip dim" id="hudBest">Best —</span>
 </div></div>
 <div id="power"><div id="powerFill"></div></div>
+<div id="zoomBtns">
+  <button id="btnZoomIn" type="button" aria-label="Zoom in">+</button>
+  <button id="btnZoomOut" type="button" aria-label="Zoom out">−</button>
+</div>
 <div id="hint">Drag back from the ball to aim · release to putt</div>
 <div id="btns">
   <button id="btnReset" type="button">Reset ball</button>
@@ -78,6 +88,6 @@ html,body{margin:0;height:100%;overflow:hidden;background:#080814;touch-action:n
   <button id="btnAgain" type="button">Play again</button>
 </div></div>
 <div id="fade"></div>
-<script type="module" src="./src/game.js?v=2"></script>
+<script type="module" src="./src/game.js?v=3"></script>
 </body>
 </html>

@@ -1,9 +1,9 @@
-import * as THREE from '../vendor/three.module.js?v=2';
-import { makeMonkey } from './monkey.js?v=2';
-import { buildHole, HOLE_META } from './holes.js?v=2';
-import { makeBall, putt, stepBall, inBounds, BALL_R, STROKE_CAP, STOP_SPEED } from './physics.js?v=2';
-import { createAudio } from './sfx.js?v=2';
-import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=2';
+import * as THREE from '../vendor/three.module.js?v=3';
+import { makeMonkey } from './monkey.js?v=3';
+import { buildHole, HOLE_META } from './holes.js?v=3';
+import { makeBall, putt, stepBall, inBounds, BALL_R, STROKE_CAP, STOP_SPEED } from './physics.js?v=3';
+import { createAudio } from './sfx.js?v=3';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=3';
 
 const BEST_KEY = 'galacticgolf.best';
 const $=id=>document.getElementById(id);
@@ -361,7 +361,7 @@ function onDown(e) {
   if (phase !== 'aim') return;
   if (e.target.closest && e.target.closest('button,.card')) return;
   // Tracker already recorded this pointer. size>1 means a pinch — never aim/putt.
-  if (activePointers.size > 1 || (aiming && e.pointerId !== pointerId)) {
+  if (touchPinching || gesturePinching || activePointers.size > 1 || (aiming && e.pointerId !== pointerId)) {
     cancelAim();
     camDrag = null;
     return;
@@ -379,7 +379,7 @@ function onDown(e) {
 }
 function onMove(e) {
   if (!aiming || e.pointerId !== pointerId) return;
-  if (activePointers.size > 1) { cancelAim(); return; }
+  if (touchPinching || gesturePinching || activePointers.size > 1) { cancelAim(); return; }
   const hit = worldFromPointer(e.clientX, e.clientY);
   if (!hit) return;
   // Pull back from ball: aim is opposite of drag direction from ball
@@ -395,17 +395,98 @@ function onUp(e) {
   if (!aiming || e.pointerId !== pointerId) return;
   aiming = false; pointerId = null;
   aimLine.visible = false; powerWrap.classList.remove('on');
-  if (aimPower > 0.06 && activePointers.size <= 1) doPutt(aimAngle, aimPower);
+  if (aimPower > 0.06 && activePointers.size <= 1 && !touchPinching && !gesturePinching) doPutt(aimAngle, aimPower);
   aimPower = 0; powerFill.style.height = '0%';
   e.preventDefault();
 }
 
-const activePointers = new Map(); // id -> {x,y}
+const activePointers = new Map(); // id -> {x,y} (pointer fallback / desktop)
 let pinchStartDist = 0, pinchStartCam = CAM_DIST_DEFAULT;
+let touchPinching = false; // true while native touch 2-finger pinch owns camDist
+let gesturePinching = false;
+let camDrag = null;
 
+function touchDist(touches) {
+  if (!touches || touches.length < 2) return 0;
+  const a = touches[0], b = touches[1];
+  return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) || 1;
+}
+function applyPinchScale(startCam, startDist, curDist) {
+  const scale = startDist / (curDist || 1);
+  camDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, startCam * scale));
+}
+function beginPinchFromTouches(touches) {
+  cancelAim();
+  camDrag = null;
+  touchPinching = true;
+  pinchStartDist = touchDist(touches);
+  pinchStartCam = camDist;
+}
+function endTouchPinch() {
+  touchPinching = false;
+  pinchStartDist = 0;
+}
+
+// ---- Primary: native touch pinch (iOS Safari reliable path) ----
+function onTouchStart(e) {
+  if (e.touches.length >= 2) {
+    beginPinchFromTouches(e.touches);
+    try { e.preventDefault(); } catch (_) {}
+  } else if (e.touches.length === 1 && aiming) {
+    // single touch while aiming is fine; second finger handled above
+  }
+}
+function onTouchMove(e) {
+  if (e.touches.length >= 2) {
+    if (!touchPinching) beginPinchFromTouches(e.touches);
+    cancelAim();
+    camDrag = null;
+    applyPinchScale(pinchStartCam, pinchStartDist, touchDist(e.touches));
+    try { e.preventDefault(); } catch (_) {}
+  }
+}
+function onTouchEnd(e) {
+  if (e.touches.length < 2) endTouchPinch();
+  if (e.touches.length >= 2) {
+    // still two+ (rare) — refresh baseline
+    pinchStartDist = touchDist(e.touches);
+    pinchStartCam = camDist;
+  }
+}
+const touchOpts = { passive: false, capture: true };
+for (const el of [renderer.domElement, document]) {
+  el.addEventListener('touchstart', onTouchStart, touchOpts);
+  el.addEventListener('touchmove', onTouchMove, touchOpts);
+  el.addEventListener('touchend', onTouchEnd, touchOpts);
+  el.addEventListener('touchcancel', onTouchEnd, touchOpts);
+}
+
+// ---- iOS Safari gesture* fallback (page pinch) ----
+let gestureStartCam = CAM_DIST_DEFAULT;
+document.addEventListener('gesturestart', e => {
+  try { e.preventDefault(); } catch (_) {}
+  gesturePinching = true;
+  cancelAim();
+  camDrag = null;
+  gestureStartCam = camDist;
+}, { passive: false, capture: true });
+document.addEventListener('gesturechange', e => {
+  try { e.preventDefault(); } catch (_) {}
+  // e.scale > 1 = pinch out = zoom in = smaller camDist
+  const s = (typeof e.scale === 'number' && e.scale > 0) ? e.scale : 1;
+  camDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, gestureStartCam / s));
+  gesturePinching = true;
+  cancelAim();
+}, { passive: false, capture: true });
+document.addEventListener('gestureend', e => {
+  try { e.preventDefault(); } catch (_) {}
+  gesturePinching = false;
+}, { passive: false, capture: true });
+
+// ---- Pointer path (desktop / Android); skip camDist while touch/gesture owns pinch ----
 renderer.domElement.addEventListener('pointerdown', e => {
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (activePointers.size === 2) {
+  if (activePointers.size === 2 && !touchPinching && !gesturePinching) {
     cancelAim();
     camDrag = null;
     const pts = [...activePointers.values()];
@@ -416,24 +497,17 @@ renderer.domElement.addEventListener('pointerdown', e => {
 renderer.domElement.addEventListener('pointermove', e => {
   if (!activePointers.has(e.pointerId)) return;
   activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (activePointers.size >= 2) {
+  if (activePointers.size >= 2 && !touchPinching && !gesturePinching) {
     cancelAim();
     const pts = [...activePointers.values()];
     const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1;
-    // Pinch out (larger distance) = zoom in (smaller camDist)
-    const scale = pinchStartDist / d;
-    camDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, pinchStartCam * scale));
+    applyPinchScale(pinchStartCam, pinchStartDist, d);
   }
 }, { passive: true });
 function clearPointer(e) {
   activePointers.delete(e.pointerId);
-  if (activePointers.size < 2) { pinchStartDist = 0; }
-  if (activePointers.size === 1) {
-    // Reset pinch baseline if one finger remains (so a new second finger starts clean)
-    const pts = [...activePointers.values()];
-    pinchStartDist = 0;
-    pinchStartCam = camDist;
-  }
+  if (activePointers.size < 2) pinchStartDist = 0;
+  if (activePointers.size === 1) { pinchStartDist = 0; pinchStartCam = camDist; }
 }
 renderer.domElement.addEventListener('pointerup', clearPointer, { passive: true });
 renderer.domElement.addEventListener('pointercancel', clearPointer, { passive: true });
@@ -443,10 +517,9 @@ renderer.domElement.addEventListener('pointermove', onMove, { passive: false });
 renderer.domElement.addEventListener('pointerup', onUp, { passive: false });
 renderer.domElement.addEventListener('pointercancel', onUp, { passive: false });
 
-// Camera orbit: drag away from ball / buttons (single finger / mouse)
-let camDrag = null;
+// Camera orbit: single-finger / mouse drag away from ball
 renderer.domElement.addEventListener('pointerdown', e => {
-  if (aiming || activePointers.size > 1) return;
+  if (aiming || activePointers.size > 1 || touchPinching || gesturePinching) return;
   if (e.target.closest && e.target.closest('button,.card')) return;
   if (phase === 'aim') {
     const hit = worldFromPointer(e.clientX, e.clientY);
@@ -455,7 +528,7 @@ renderer.domElement.addEventListener('pointerdown', e => {
   camDrag = { id: e.pointerId, x: e.clientX, y: e.clientY };
 }, { passive: true });
 renderer.domElement.addEventListener('pointermove', e => {
-  if (!camDrag || e.pointerId !== camDrag.id || aiming || activePointers.size > 1) return;
+  if (!camDrag || e.pointerId !== camDrag.id || aiming || activePointers.size > 1 || touchPinching) return;
   const dx = e.clientX - camDrag.x, dy = e.clientY - camDrag.y;
   camDrag.x = e.clientX; camDrag.y = e.clientY;
   camYaw -= dx * 0.005;
@@ -467,6 +540,29 @@ renderer.domElement.addEventListener('wheel', e => {
   camDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, camDist + e.deltaY * 0.012));
   e.preventDefault();
 }, { passive: false });
+
+// On-screen +/- zoom (always works)
+function nudgeZoom(dir) {
+  camDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, camDist + dir * 0.85));
+}
+function bindZoomHold(btn, dir) {
+  if (!btn) return;
+  let t = null, r = null;
+  const start = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    cancelAim(); camDrag = null;
+    nudgeZoom(dir);
+    t = setTimeout(() => { r = setInterval(() => nudgeZoom(dir), 60); }, 320);
+  };
+  const stop = () => { clearTimeout(t); clearInterval(r); t = r = null; };
+  btn.addEventListener('pointerdown', start);
+  btn.addEventListener('pointerup', stop);
+  btn.addEventListener('pointerleave', stop);
+  btn.addEventListener('pointercancel', stop);
+  btn.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
+}
+bindZoomHold($('btnZoomIn'), -1);  // + = zoom in = smaller camDist
+bindZoomHold($('btnZoomOut'), +1);
 
 $('btnReset').onclick = () => { resetBall(); strokes = Math.min(strokes + 0, strokes); /* free reset of position but keep strokes? Task: Reset ball button - typically free */ };
 // Re-read: "Reset ball button" - usually puts back to last lie or tee. I'll reset to tee without adding stroke.
