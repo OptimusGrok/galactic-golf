@@ -1,5 +1,5 @@
 // Mini-golf ball physics on XZ with optional height (ramps). Circle + AABB colliders.
-export const BALL_R = 0.068;
+export const BALL_R = 0.046; // ~68% of prior 0.068 — visual+physics
 export const FRICTION = 1.6;
 export const BOUNCE = 0.62;
 export const STOP_SPEED = 0.06;

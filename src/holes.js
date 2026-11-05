@@ -1,6 +1,6 @@
 // Nine themed neon rooms. Static meshes are merged per material to keep draw calls low.
-import { BALL_R } from './physics.js?v=4';
-import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=4';
+import { BALL_R } from './physics.js?v=5';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=5';
 
 let T = null; // set per buildHole
 const GREEN = 0x0e6a30;
@@ -325,12 +325,7 @@ function flattenStaticGroups(root) {
 
 function holeStrike(THREE) {
   const H = baseRoom(THREE, { neon: ORANGE, name: 'Strike', num: 1, par: 3, w: 5.2, l: 10 });
-  // Starfield on felt
-  const starMat = basicGlow(THREE, 0xffffff);
-  for (let i = 0; i < 36; i++) {
-    const x = (Math.random() - 0.5) * 4.6, z = (Math.random() - 0.5) * 9;
-    addMesh(H.group, new THREE.SphereGeometry(0.025 + Math.random() * 0.02, 6, 6), starMat, x, 0.1, z);
-  }
+  // (starfield white dots removed — looked like extra golf balls)
   // Recognisable little fighter ships (top-down arrow / X-wing silhouette)
   const hull = glow(THREE, 0x6aa8ff, 0.85);
   const wing = glow(THREE, 0xff4040, 1.0);
@@ -372,12 +367,7 @@ function holeGhost(THREE) {
     addMesh(H.group, new THREE.BoxGeometry(hw * 2 + 0.04, 0.06, hd * 2 + 0.04), wallTop, x, 0.62, z);
     H.colliders.push(aabbAround(x, z, hw, hd));
   });
-  const dot = glow(THREE, 0xffe14a, 1.8);
-  for (let z = -3.8; z < 3.8; z += 0.5) {
-    for (const x of [-2.1, 0, 2.1]) {
-      addMesh(H.group, new THREE.SphereGeometry(0.06, 8, 8), dot, x * 0.85, 0.12, z);
-    }
-  }
+  // (scattered pellet spheres removed — looked like small balls on the green)
   // Pink ghost — patrol open corridors only (waypoints clear of maze AABBs)
   const ghost = new THREE.Group(); ghost.userData.dynamic = true; ghost.userData.noMerge = true;
   const gMat = glow(THREE, MAG, 1.7);

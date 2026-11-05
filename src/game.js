@@ -1,9 +1,9 @@
-import * as THREE from '../vendor/three.module.js?v=4';
-import { makeMonkey } from './monkey.js?v=4';
-import { buildHole, HOLE_META } from './holes.js?v=4';
-import { makeBall, putt, stepBall, inBounds, BALL_R, STROKE_CAP, STOP_SPEED } from './physics.js?v=4';
-import { createAudio } from './sfx.js?v=4';
-import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=4';
+import * as THREE from '../vendor/three.module.js?v=5';
+import { makeMonkey } from './monkey.js?v=5';
+import { buildHole, HOLE_META } from './holes.js?v=5';
+import { makeBall, putt, stepBall, inBounds, BALL_R, STROKE_CAP, STOP_SPEED } from './physics.js?v=5';
+import { createAudio } from './sfx.js?v=5';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=5';
 
 const BEST_KEY = 'galacticgolf.best';
 const $=id=>document.getElementById(id);
