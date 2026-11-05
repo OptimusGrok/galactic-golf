@@ -1,6 +1,6 @@
 // Nine themed neon rooms. Static meshes are merged per material to keep draw calls low.
-import { BALL_R } from './physics.js?v=3';
-import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=3';
+import { BALL_R } from './physics.js?v=4';
+import { mergeGeometries } from '../vendor/BufferGeometryUtils.js?v=4';
 
 let T = null; // set per buildHole
 const GREEN = 0x0e6a30;
@@ -212,18 +212,24 @@ function baseRoom(THREE, opts) {
   const wallThick = 0.16;
   // Far wall (behind cup) — holds sign
   addMesh(group, new THREE.BoxGeometry(w + wallPad * 2 + wallThick * 2, roomH, wallThick), wallMat, 0, roomH / 2, wallFarZ + wallThick / 2);
-  // Near wall (behind tee) — low enough visually under camera pitch but seals the floor
-  addMesh(group, new THREE.BoxGeometry(w + wallPad * 2 + wallThick * 2, roomH, wallThick), wallMat, 0, roomH / 2, wallNearZ - wallThick / 2);
-  // Side walls
-  addMesh(group, new THREE.BoxGeometry(wallThick, roomH, l + wallPad * 2 + wallThick * 2), wallMat, -wallX - wallThick / 2, roomH / 2, 0);
-  addMesh(group, new THREE.BoxGeometry(wallThick, roomH, l + wallPad * 2 + wallThick * 2), wallMat, wallX + wallThick / 2, roomH / 2, 0);
-  // Corner neon pillars flush to room corners
+  // NO full near wall: camera sits south of the tee and a solid near wall blacked out
+  // the whole lower half of the phone view. Open south end; short kickboard only.
+  const kickH = 0.28;
+  addMesh(group, new THREE.BoxGeometry(w + wallPad * 2 + wallThick * 2, kickH, wallThick), wallMat, 0, kickH / 2, wallNearZ - wallThick / 2);
+  // Side walls: stop at the near rail so they never sit between camera and green.
+  // Open south end; length covers green + far pad only.
+  // side segment: from z=-halfL (near rail) to past far wall — open south for camera
+  const sideMidZ = (-halfL + wallFarZ + wallThick) / 2;
+  const sideDepth = (wallFarZ + wallThick) - (-halfL);
+  addMesh(group, new THREE.BoxGeometry(wallThick, roomH, sideDepth), wallMat, -wallX - wallThick / 2, roomH / 2, sideMidZ);
+  addMesh(group, new THREE.BoxGeometry(wallThick, roomH, sideDepth), wallMat, wallX + wallThick / 2, roomH / 2, sideMidZ);
+  // Corner neon pillars: full height at far; short kickboard pillars at near (open end)
   const pillar = glow(THREE, neon, 1.2);
   const cx = wallX + wallThick / 2, czF = wallFarZ + wallThick / 2, czN = wallNearZ - wallThick / 2;
   addMesh(group, new THREE.BoxGeometry(0.14, roomH, 0.14), pillar, -cx, roomH / 2, czF);
   addMesh(group, new THREE.BoxGeometry(0.14, roomH, 0.14), pillar, cx, roomH / 2, czF);
-  addMesh(group, new THREE.BoxGeometry(0.14, roomH, 0.14), pillar, -cx, roomH / 2, czN);
-  addMesh(group, new THREE.BoxGeometry(0.14, roomH, 0.14), pillar, cx, roomH / 2, czN);
+  addMesh(group, new THREE.BoxGeometry(0.14, kickH + 0.08, 0.14), pillar, -cx, (kickH + 0.08) / 2, czN);
+  addMesh(group, new THREE.BoxGeometry(0.14, kickH + 0.08, 0.14), pillar, cx, (kickH + 0.08) / 2, czN);
   // Neon accents on far wall only (never across the green)
   const stripA = glow(THREE, neon, 2.2);
   const stripB = glow(THREE, neon === MAG ? CYAN : neon === CYAN ? MAG : CYAN, 1.8);
